@@ -663,6 +663,9 @@ docker compose exec redis redis-cli ping
 ```bash
 # WordPress without object cache: every request = multiple SQL queries
 curl -s -o /dev/null -w "Time: %{time_total}s\n" 'http://localhost:8080'
+
+# Full Redis OFF vs ON comparison with before/after diff table:
+docker compose exec wordpress wp-perf-test.sh redis
 ```
 
 ### [11.3] Enable Redis Object Cache
@@ -747,23 +750,61 @@ docker compose exec db mysql -u wpuser -pwppassword --table wordpress -e \
   "SELECT table_name, ROUND(data_length/1024/1024,2) AS data_mb, table_rows FROM information_schema.tables WHERE table_schema=DATABASE() ORDER BY data_length DESC;"
 ```
 
-**Full set of hygiene queries:** see `demos/db-hygiene-queries.sql`
-
-**Cleanup and prevention:**
-```php
-// wp-config.php — limit revisions
-define('WP_POST_REVISIONS', 3);
-
-// wp-config.php — disable revisions entirely
-define('WP_POST_REVISIONS', false);
-```
+### [12.5] Before/after cleanup — live fix
 
 ```bash
-# WP-CLI: delete all revisions older than 30 days
-docker compose exec wordpress wp post delete \
-  $(docker compose exec wordpress wp post list --post_type=revision --format=ids --allow-root) \
-  --force --allow-root
+# Seed the bloat (if not already done — idempotent, safe to re-run)
+docker compose exec wordpress wp-bloat.sh
+
+# Record performance baseline BEFORE cleanup
+docker compose exec wordpress wp-perf-test.sh before
+
+# Now run the Section 12.1–12.4 queries above to show the "before" state:
+# - Autoload: ~5 MB   Revisions: 25,000+   Expired transients: 800
+# - Products: 1,000   Product meta: ~12,000 rows
+# - Spam: 750   Auto-drafts: 250   Orphaned meta: 4,500
+
+# Run the cleanup — shows BEFORE and AFTER in one output
+docker compose exec wordpress wp-cleanup.sh
+
+# Measure AFTER and print diff table
+docker compose exec wordpress wp-perf-test.sh after
 ```
+
+- **Expected before**: Autoload ~5+ MB, 25,000+ revisions (20,000 post + 5,000 product), **1,000 WooCommerce products** with ~12,000 product meta rows, 800 expired transients, 750 spam, 250 auto-drafts, 4,500 orphaned meta rows
+- **Expected after**: Autoload ~0.05 MB, 0 revisions, 0 products, 0 expired transients, all zeros
+- **Key message**: Every single one of these is a standard maintenance task. Most production WordPress sites never run any of them.
+
+**What the cleanup does — the full improvements list:**
+
+| Action | Command | Impact |
+|--------|---------|--------|
+| Delete expired transients | `wp transient delete --expired` | Removes dead cache rows |
+| Delete orphaned autoload options | SQL DELETE WHERE name LIKE plugin_% | Reduces autoload MB immediately |
+| Delete orphaned post meta | SQL DELETE LEFT JOIN | Shrinks `wp_postmeta` |
+| Delete orphaned user meta | SQL DELETE LEFT JOIN | Shrinks `wp_usermeta` |
+| Delete spam comments | SQL DELETE WHERE approved='spam' | Shrinks `wp_comments` |
+| Delete auto-drafts | SQL DELETE WHERE status='auto-draft' | Shrinks `wp_posts` |
+| Delete all revisions | SQL DELETE WHERE type='revision' | Biggest win: can be 90%+ of `wp_posts` |
+| Delete WooCommerce bloat products | SQL DELETE by `_bloat_product` marker | Removes 1,000 products + ~12,000 meta rows + 5,000 revisions |
+| OPTIMIZE TABLE | `wp db optimize` | Reclaims freed disk pages, rebuilds indexes |
+
+**Prevention (add to `wp-config.php`):**
+```php
+define('WP_POST_REVISIONS', 3);    // keep only last 3 revisions per post
+define('EMPTY_TRASH_DAYS', 7);     // auto-purge trash after 7 days
+```
+
+**Schedule recurring cleanup (WP-CLI cron):**
+```bash
+# Daily expired transient cleanup
+wp cron schedule add daily_cleanup --schedule=daily --command='wp transient delete --expired' --allow-root
+
+# Or add to system cron:
+# 0 3 * * * docker compose exec wordpress wp transient delete --expired --allow-root
+```
+
+**Full set of hygiene queries:** see `demos/db-hygiene-queries.sql`
 
 ---
 
@@ -1006,9 +1047,15 @@ docker compose exec wordpress rm -f /tmp/shell.php /var/www/html/wp-content/uplo
 # Clear attacker loot
 curl -s -X DELETE 'http://localhost:9090/loot'
 
-# Full reset — rebuild everything
+# Reset Section 12 bloat for a re-run (cleanup then re-seed)
+docker compose exec wordpress wp-cleanup.sh
+docker compose exec wordpress wp-bloat.sh
+docker compose exec wordpress wp-perf-test.sh before   # re-record baseline after re-seed
+
+# Full reset — rebuild everything (also re-runs wp-setup.sh which seeds the 150-revision post)
 docker compose down -v && docker compose up -d --build
 docker compose exec wordpress wp-setup.sh
+docker compose exec wordpress wp-bloat.sh   # re-seed bloat after full reset
 ```
 
 ---
