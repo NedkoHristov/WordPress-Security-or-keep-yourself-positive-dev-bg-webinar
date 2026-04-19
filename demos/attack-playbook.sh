@@ -4,11 +4,100 @@
 # Run these commands step-by-step during the presentation
 #
 # Usage: Execute each section during the corresponding part of the talk
+#        Run with --smoke-test to verify all endpoints before the talk
 #
 
 WP_URL="http://localhost:8080"
 ATTACKER_URL="http://localhost:9090"
 AJAX_URL="${WP_URL}/wp-admin/admin-ajax.php"
+
+# ─────────────────────────────────────────────────
+# PRE-FLIGHT SMOKE TEST
+# ─────────────────────────────────────────────────
+
+if [[ "$1" == "--smoke-test" ]]; then
+    echo "============================================="
+    echo "  Pre-Flight Smoke Test"
+    echo "============================================="
+    echo ""
+
+    PASS=0
+    FAIL=0
+
+    check() {
+        local label="$1"
+        local url="$2"
+        local expect="$3"
+        local response
+        response=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "$url" 2>/dev/null)
+        if [[ "$response" == "$expect" ]]; then
+            echo "  ✅ ${label} (HTTP ${response})"
+            ((PASS++))
+        else
+            echo "  ❌ ${label} — expected ${expect}, got ${response}"
+            ((FAIL++))
+        fi
+    }
+
+    check_body() {
+        local label="$1"
+        local url="$2"
+        local pattern="$3"
+        local body
+        body=$(curl -s --max-time 5 "$url" 2>/dev/null)
+        if echo "$body" | grep -q "$pattern"; then
+            echo "  ✅ ${label}"
+            ((PASS++))
+        else
+            echo "  ❌ ${label} — pattern '${pattern}' not found"
+            ((FAIL++))
+        fi
+    }
+
+    echo "[WordPress]"
+    check "WP Frontend" "${WP_URL}/" "200"
+    check "WP Admin login" "${WP_URL}/wp-login.php" "200"
+    echo ""
+
+    echo "[Vulnerable Endpoints]"
+    check_body "SQLi search"     "${AJAX_URL}?action=vuln_search&q=test" "query_executed"
+    check      "XSS guestbook"  "${AJAX_URL}?action=vuln_guestbook_submit" "302"
+    check      "CSRF email"     "${AJAX_URL}?action=vuln_change_email" "400"
+    check_body "IDOR get_user"   "${AJAX_URL}?action=vuln_get_user&id=1" "login"
+    check_body "File upload"     "${AJAX_URL}?action=vuln_upload" "No file uploaded"
+    check_body "RCE calculator"  "${AJAX_URL}?action=vuln_calculator" "No expression"
+    check_body "Enumeration"     "${AJAX_URL}?action=vuln_debug_info" "php_version"
+    echo ""
+
+    echo "[Fixed Endpoints]"
+    check_body "SQLi fixed"      "${AJAX_URL}?action=vuln_search_fixed&q=test" "prepare"
+    check_body "Upload fixed"    "${AJAX_URL}?action=vuln_upload_fixed" "No file uploaded"
+    check_body "RCE fixed"       "${AJAX_URL}?action=vuln_calculator_fixed" "No expression"
+    echo ""
+
+    echo "[Attacker C2]"
+    check "C2 index" "${ATTACKER_URL}/" "200"
+    check "C2 loot"  "${ATTACKER_URL}/loot" "200"
+    echo ""
+
+    echo "[REST API]"
+    check_body "Users endpoint" "${WP_URL}/wp-json/wp/v2/users" "slug"
+    echo ""
+
+    echo "============================================="
+    echo "  Results: ${PASS} passed, ${FAIL} failed"
+    echo "============================================="
+
+    if [[ $FAIL -gt 0 ]]; then
+        echo ""
+        echo "  ⚠️  Fix failing checks before the talk!"
+        exit 1
+    else
+        echo ""
+        echo "  🎯 All systems go. Ready for the demo!"
+        exit 0
+    fi
+fi
 
 echo "============================================="
 echo "  WordPress Security Demo - Attack Playbook"

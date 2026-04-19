@@ -53,6 +53,9 @@ wp post create --post_title="Confidential Data" --post_content="Secret API Key: 
 wp rewrite structure '/%postname%/' --allow-root || true
 wp rewrite flush --allow-root || true
 
+# Fix uploads directory ownership for file upload demo
+chown -R www-data:www-data /var/www/html/wp-content/uploads/ 2>/dev/null || true
+
 echo "=== WordPress Demo Setup Complete ==="
 echo ""
 echo "  URL:      http://localhost:8080"
