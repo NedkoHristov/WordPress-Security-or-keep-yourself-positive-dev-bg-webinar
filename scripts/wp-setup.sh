@@ -14,13 +14,18 @@ echo "WordPress files are ready!"
 # Wait for database to be reachable via PHP
 echo "Waiting for database connection..."
 until php -r "
-  \$c = @new mysqli(
-    getenv('WORDPRESS_DB_HOST') ?: 'db',
-    getenv('WORDPRESS_DB_USER') ?: 'wpuser',
-    getenv('WORDPRESS_DB_PASSWORD') ?: 'wppassword',
-    getenv('WORDPRESS_DB_NAME') ?: 'wordpress'
-  );
-  exit(\$c->connect_error ? 1 : 0);
+  mysqli_report(MYSQLI_REPORT_OFF);
+  try {
+    \$c = new mysqli(
+      getenv('WORDPRESS_DB_HOST') ?: 'db',
+      getenv('WORDPRESS_DB_USER') ?: 'wpuser',
+      getenv('WORDPRESS_DB_PASSWORD') ?: 'wppassword',
+      getenv('WORDPRESS_DB_NAME') ?: 'wordpress'
+    );
+    exit(\$c->connect_error ? 1 : 0);
+  } catch (Exception \$e) {
+    exit(1);
+  }
 " 2>/dev/null; do
     echo "  DB not ready yet, retrying in 3s..."
     sleep 3
