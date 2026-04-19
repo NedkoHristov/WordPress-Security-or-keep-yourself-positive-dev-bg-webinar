@@ -1,0 +1,15 @@
+FROM wordpress:6.7-php8.3-apache
+
+# Install WP-CLI
+RUN curl -o /usr/local/bin/wp https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar \
+    && chmod +x /usr/local/bin/wp
+
+# Install Redis PHP extension
+RUN pecl install redis && docker-php-ext-enable redis
+
+# Copy custom php.ini for demo (insecure on purpose for demo)
+COPY config/php-demo.ini /usr/local/etc/php/conf.d/zz-demo.ini
+
+# Copy the setup script
+COPY scripts/wp-setup.sh /usr/local/bin/wp-setup.sh
+RUN chmod +x /usr/local/bin/wp-setup.sh
