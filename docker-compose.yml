@@ -52,7 +52,10 @@ services:
     image: wpscanteam/wpscan:latest
     depends_on:
       - wordpress
-    entrypoint: ["tail", "-f", "/dev/null"]
+    environment:
+      WPSCAN_API_TOKEN: "j7U2vFIvwayMPpsxJUGFjWcf4YMlTQGpQ15Ud5doSZE"
+    volumes:
+      - ./demos/passwords.txt:/tmp/passwords.txt:ro
     profiles:
       - tools
 

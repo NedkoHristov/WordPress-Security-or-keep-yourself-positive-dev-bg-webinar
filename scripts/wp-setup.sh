@@ -54,6 +54,18 @@ wp plugin activate wp-vuln-demo --allow-root || true
 wp post create --post_title="Welcome to the Security Demo" --post_content="This is a demonstration site for WordPress security testing." --post_status=publish --allow-root || true
 wp post create --post_title="Confidential Data" --post_content="Secret API Key: sk-demo-12345-fake-key. Internal notes: This should not be public." --post_status=draft --allow-root || true
 
+# Seed revision bloat demo post (for Section 12.3 DB Hygiene demo)
+# Creates a draft post with 150 revisions to illustrate unchecked revision growth
+wp eval '
+$existing = get_posts(["post_type"=>"post","post_status"=>"draft","title"=>"Revision Bloat Demo","numberposts"=>1]);
+if (!empty($existing)) { echo "Revision Bloat Demo post already exists, skipping.\n"; return; }
+$post_id = wp_insert_post(["post_title"=>"Revision Bloat Demo","post_content"=>"Initial content.","post_status"=>"draft","post_author"=>1]);
+for ($i = 1; $i <= 150; $i++) {
+    wp_update_post(["ID"=>$post_id,"post_content"=>"Revision $i — ".str_repeat("Lorem ipsum dolor sit amet. ",10)]);
+}
+echo "Created Revision Bloat Demo post (ID: $post_id) with 150 revisions.\n";
+' --allow-root || true
+
 # Set permalink structure
 wp rewrite structure '/%postname%/' --allow-root || true
 wp rewrite flush --allow-root || true

