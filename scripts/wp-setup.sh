@@ -53,6 +53,10 @@ wp plugin activate wp-vuln-demo --allow-root || true
 # Install WooCommerce (pre-installed for Section 12 WooCommerce bloat demo)
 wp plugin install woocommerce --activate --allow-root || true
 
+# Install and enable Redis object cache (Section 11 Redis perf demo)
+wp plugin install redis-cache --activate --allow-root || true
+wp redis enable --allow-root || true
+
 # Create demo content
 wp post create --post_title="Welcome to the Security Demo" --post_content="This is a demonstration site for WordPress security testing." --post_status=publish --allow-root || true
 wp post create --post_title="Confidential Data" --post_content="Secret API Key: sk-demo-12345-fake-key. Internal notes: This should not be public." --post_status=draft --allow-root || true

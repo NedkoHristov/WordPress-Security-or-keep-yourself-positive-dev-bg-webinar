@@ -60,9 +60,9 @@ curl -s 'http://localhost:8080' | grep 'generator'
 
 - **Attack surface**: `<meta name="generator">` tag in page source reveals the exact WP version
 - **Expected result**: Version number in HTML meta tag
-- **Evidence**: `<meta name="generator" content="WordPress 6.7.2" />` — attacker knows exactly which CVEs to try:
+- **Evidence**: `<meta name="generator" content="WordPress 6.9" />` — attacker knows exactly which CVEs to try:
   - WPScan DB: https://wpscan.com/wordpresses/
-  - NVD: https://nvd.nist.gov/vuln/search#/nvd/home?keyword=wordpress%206.7.2&resultType=records
+  - NVD: https://nvd.nist.gov/vuln/search#/nvd/home?keyword=wordpress%206.9&resultType=records
 
 ### [1.4] Debug info endpoint (vulnerable plugin)
 
@@ -84,14 +84,10 @@ add_action('wp_ajax_nopriv_my_action', ...);  // ← everyone, including strange
 A developer adds `nopriv_` to test during development, forgets to remove it, ships to production. One line of code, millions of sites exposed.
 
 **Real-world examples:**
+- **RevSlider — CVE-2014-9734**: `nopriv_` endpoint leaked arbitrary files incl. `wp-config.php`; SoakSoak botnet hit 100K+ sites in one weekend.
+- **WP Query Console — 2024**: `nopriv_` AJAX handler accepted raw PHP eval — same pattern as `vuln_calculator`. ([Patchstack](https://patchstack.com/database/wordpress/plugin/wp-query-console/vulnerability/wordpress-wp-query-console-plugin-1-0-remote-code-execution-rce-vulnerability))
 
-- **Slider Revolution (RevSlider) — 2014, CVE-2014-9734**  
-  Bundled silently inside premium ThemeForest themes purchased by millions. Its `wp_ajax_nopriv_revslider_ajax_action` endpoint accepted a `client_action=get_google_font_icons` parameter that could be abused to read arbitrary files — including `wp-config.php`. No authentication required. The **SoakSoak** botnet exploited this at scale, compromising 100,000+ sites in a single weekend. Victims had no idea the vulnerable plugin was even installed.
-
-- **WP Query Console — 2024, unauthenticated RCE**  
-  A plugin that lets admins run raw PHP and SQL queries from the dashboard. Its AJAX handler was registered with `nopriv` — meaning anyone on the internet could POST arbitrary PHP code and execute it on the server. Exact same pattern as our `vuln_calculator` demo. Listed in the [Patchstack database](https://patchstack.com/database/wordpress/plugin/wp-query-console/vulnerability/wordpress-wp-query-console-plugin-1-0-remote-code-execution-rce-vulnerability).
-
-**Takeaway for the audience:** This isn't exotic. It's a one-word typo (`nopriv_`) left in by a developer who never thought about the threat model. Always audit every `wp_ajax_nopriv_` registration in your plugins.
+> **Takeaway:** One-word typo (`nopriv_`) — always audit `wp_ajax_nopriv_` registrations in plugins.
 
 ### [1.5] Login error username disclosure
 
@@ -134,15 +130,7 @@ $results = $wpdb->get_results(
 );
 ```
 
-**Real-world example — LayerSlider, CVE-2024-2879 (CVSS 9.8 CRITICAL)**
-
-LayerSlider is a premium slider plugin installed on **1,000,000+ WordPress sites**. In versions 7.9.11 and 7.10.0, its `ls_get_popup_markup` AJAX action accepted a `id` parameter and passed it into a SQL query without `$wpdb->prepare()`. Zero authentication required.
-
-An attacker could extract the entire `wp_users` table — usernames, password hashes, emails — with a single unauthenticated HTTP request. Identical to what we're about to demonstrate with `vuln_search`.
-
-- NVD: https://nvd.nist.gov/vuln/detail/CVE-2024-2879
-- Affected: LayerSlider 7.9.11 and 7.10.0
-- Patched: 7.10.1 (released within days of disclosure)
+> **CVE-2024-2879 (CVSS 9.8)** — LayerSlider 1M+ installs: `id` param concatenated into SQL, no auth → full `wp_users` dump. [NVD](https://nvd.nist.gov/vuln/detail/CVE-2024-2879)
 
 ### [2.2] Boolean-based SQLi
 
@@ -237,8 +225,7 @@ echo '<p>You searched for: ' . esc_html($query) . '</p>';
 - **Reflected**: payload lives in the URL. Victim must click the attacker's crafted link. Gone after the request.
 - **Stored** (Section 3.2): payload is saved in the database. Executes for every visitor on every page load — no link needed.
 
-**Real-world example — Elementor, CVE-2022-1329 (CVSS 8.8)**  
-Elementor is the most popular WordPress page builder with **5M+ active installs**. A reflected XSS in its onboarding wizard allowed any logged-in subscriber to inject scripts that executed in an administrator's browser session — enough to create rogue admin accounts or install malicious plugins. Same root cause: `$_GET` parameter echoed without `esc_html()`.
+> **CVE-2022-1329 (CVSS 8.8)** — Elementor 5M+ installs: reflected XSS in onboarding wizard, subscriber → admin session hijack. Root cause: `$_GET` echoed without `esc_html()`.
 
 ### [3.2] Stored XSS — cookie-stealing guestbook
 
@@ -337,14 +324,8 @@ curl -s 'http://localhost:8080/wp-admin/admin-ajax.php?action=vuln_get_post&id=1
 - **Evidence**: Returns content and status — works for drafts and private posts that should require authentication
 
 **Real-world examples — identical root cause:**
-
-- **WordPress core — CVE-2019-17671 (unauthenticated private/draft disclosure)**  
-  In WordPress before 5.2.4, appending `?static=1` to any URL would bypass the post status check in `WP_Query`. Unauthenticated visitors could read the full content of any private or draft post by guessing its ID — no login, no token, just incrementing a number. Identical to `vuln_get_post`: the code fetched the post by ID and forgot to verify whether the current user was allowed to see it.  
-  - NVD: https://nvd.nist.gov/vuln/detail/CVE-2019-17671
-
-- **WooCommerce Stripe Gateway — CVE-2023-2986 (CVSS 9.8, 900K+ installs)**  
-  The `stripe_payment_intent` endpoint accepted an `order_id` parameter with no authorization check. Any unauthenticated visitor could retrieve any customer's order details — billing name, address, email, last 4 digits of card — by iterating order IDs from 1 upward. Same pattern: integer ID, no `current_user_can()`, full record returned. Half a million WooCommerce stores exposing every customer order ever placed.  
-  - NVD: https://nvd.nist.gov/vuln/detail/CVE-2023-2986
+- **CVE-2019-17671** — WP <5.2.4: `?static=1` bypassed post status check → unauthenticated private/draft read. [NVD](https://nvd.nist.gov/vuln/detail/CVE-2019-17671)
+- **CVE-2023-2986 (CVSS 9.8)** — WooCommerce Stripe 900K+ installs: `order_id` with no `current_user_can()` → full customer billing data exposed. [NVD](https://nvd.nist.gov/vuln/detail/CVE-2023-2986)
 
 **The fix — two lines:**
 ```php
@@ -668,16 +649,12 @@ curl -s -o /dev/null -w "Time: %{time_total}s\n" 'http://localhost:8080'
 docker compose exec wordpress wp-perf-test.sh redis
 ```
 
-### [11.3] Enable Redis Object Cache
+### [11.3] Verify Redis Object Cache status
+
+> Redis Object Cache plugin is **pre-installed and enabled** by `wp-setup.sh` — no manual steps needed.
 
 ```bash
-# Install and activate the Redis Object Cache plugin
-docker compose exec wordpress wp plugin install redis-cache --activate --allow-root
-
-# Enable the object cache drop-in
-docker compose exec wordpress wp redis enable --allow-root
-
-# Verify status
+# Confirm the drop-in is active and connected
 docker compose exec wordpress wp redis status --allow-root
 ```
 
@@ -774,35 +751,6 @@ docker compose exec wordpress wp-perf-test.sh after
 - **Expected before**: Autoload ~5+ MB, 25,000+ revisions (20,000 post + 5,000 product), **1,000 WooCommerce products** with ~12,000 product meta rows, 800 expired transients, 750 spam, 250 auto-drafts, 4,500 orphaned meta rows
 - **Expected after**: Autoload ~0.05 MB, 0 revisions, 0 products, 0 expired transients, all zeros
 - **Key message**: Every single one of these is a standard maintenance task. Most production WordPress sites never run any of them.
-
-**What the cleanup does — the full improvements list:**
-
-| Action | Command | Impact |
-|--------|---------|--------|
-| Delete expired transients | `wp transient delete --expired` | Removes dead cache rows |
-| Delete orphaned autoload options | SQL DELETE WHERE name LIKE plugin_% | Reduces autoload MB immediately |
-| Delete orphaned post meta | SQL DELETE LEFT JOIN | Shrinks `wp_postmeta` |
-| Delete orphaned user meta | SQL DELETE LEFT JOIN | Shrinks `wp_usermeta` |
-| Delete spam comments | SQL DELETE WHERE approved='spam' | Shrinks `wp_comments` |
-| Delete auto-drafts | SQL DELETE WHERE status='auto-draft' | Shrinks `wp_posts` |
-| Delete all revisions | SQL DELETE WHERE type='revision' | Biggest win: can be 90%+ of `wp_posts` |
-| Delete WooCommerce bloat products | SQL DELETE by `_bloat_product` marker | Removes 1,000 products + ~12,000 meta rows + 5,000 revisions |
-| OPTIMIZE TABLE | `wp db optimize` | Reclaims freed disk pages, rebuilds indexes |
-
-**Prevention (add to `wp-config.php`):**
-```php
-define('WP_POST_REVISIONS', 3);    // keep only last 3 revisions per post
-define('EMPTY_TRASH_DAYS', 7);     // auto-purge trash after 7 days
-```
-
-**Schedule recurring cleanup (WP-CLI cron):**
-```bash
-# Daily expired transient cleanup
-wp cron schedule add daily_cleanup --schedule=daily --command='wp transient delete --expired' --allow-root
-
-# Or add to system cron:
-# 0 3 * * * docker compose exec wordpress wp transient delete --expired --allow-root
-```
 
 **Full set of hygiene queries:** see `demos/db-hygiene-queries.sql`
 
@@ -980,35 +928,10 @@ docker compose exec wordpress wp db export /tmp/backup-$(date +%Y%m%d-%H%M).sql 
 docker compose exec wordpress ls -lh /tmp/backup-*.sql
 ```
 
-**Backup strategy — the 3-2-1 rule:**
-
-| Rule | Meaning | WordPress implementation |
-|------|---------|------------------------|
-| **3** copies | Three total copies of data | Live DB + local backup + off-site backup |
-| **2** media types | Two different storage types | Disk + cloud (S3, Backblaze, Google Drive) |
-| **1** off-site | One copy physically elsewhere | UpdraftPlus to S3, rsync to remote VPS |
-
-**What to back up:**
-```bash
-# Database (all content, settings, users)
-wp db export backup.sql --allow-root
-
-# Uploads (images, documents — user content not in git)
-tar -czf uploads-backup.tar.gz wp-content/uploads/
-
-# wp-config.php (environment-specific settings)
-cp wp-config.php wp-config.backup.php
-```
-
-**What NOT to back up** (always reproducible): WordPress core files, plugins, themes — these belong in version control or can be re-installed.
-
-**Test your backups:**
-```bash
-# Import a backup to a test container to verify it actually works
-docker compose exec db mysql -u wpuser -pwppassword wordpress < /tmp/backup.sql
-```
-
-> A backup you haven't tested is not a backup. Schedule monthly restore drills.
+- **3-2-1 rule**: 3 copies (live + local + off-site), 2 media types, 1 off-site (UpdraftPlus → S3)
+- **Back up**: DB, uploads (`wp-content/uploads/`), `wp-config.php`
+- **Don't back up**: core, plugins, themes — reproducible
+- **Test restores monthly** — an untested backup is not a backup
 
 ---
 
@@ -1038,27 +961,46 @@ docker compose exec db mysql -u wpuser -pwppassword wordpress < /tmp/backup.sql
 ## Demo Reset Commands
 
 ```bash
-# Reset guestbook (XSS entries)
+# ── Per-section atomic resets ─────────────────────────────────────────
+
+# Reset guestbook (Section 3 — XSS stored entries)
 docker compose exec wordpress wp eval 'global $wpdb; $wpdb->query("TRUNCATE TABLE wp_vuln_guestbook");' --allow-root
 
-# Delete uploaded webshell (container + uploads dir)
+# Delete uploaded webshell (Section 6 — file upload)
 docker compose exec wordpress rm -f /tmp/shell.php /var/www/html/wp-content/uploads/vuln-demo/shell.php
 
-# Clear attacker loot
+# Clear attacker loot (Section 3 — C2 cookie store)
 curl -s -X DELETE 'http://localhost:9090/loot'
 
-# Reset Section 12 bloat for a re-run (cleanup then re-seed)
+# Restore tampered core file (Section 15 — integrity check)
+docker compose exec wordpress wp core download --force --allow-root
+
+# Remove read-only constants set during Section 14 demo
+docker compose exec wordpress wp config delete DISALLOW_FILE_EDIT --allow-root || true
+docker compose exec wordpress wp config delete DISALLOW_FILE_MODS --allow-root || true
+
+# ── Section 12 re-run (cleanup → re-seed bloat → re-record baseline) ──
 docker compose exec wordpress wp-cleanup.sh
 docker compose exec wordpress wp-bloat.sh
 docker compose exec wordpress wp-perf-test.sh before   # re-record baseline after re-seed
 
-# Full reset — rebuild everything (also re-runs wp-setup.sh which seeds the 150-revision post)
+# ── Full reset — wipe everything and rebuild from scratch ─────────────
 docker compose down -v && docker compose up -d --build
+# wp-setup.sh: installs WP, creates 4 users, activates wp-vuln-demo,
+#              installs WooCommerce + redis-cache, enables Redis automatically
 docker compose exec wordpress wp-setup.sh
-docker compose exec wordpress wp-bloat.sh   # re-seed bloat after full reset
+docker compose exec wordpress wp-bloat.sh              # seed all 8 bloat categories
+docker compose exec wordpress wp-perf-test.sh before   # record Section 12 perf baseline
+# Redis (Section 11) is already enabled by wp-setup.sh — verify with:
+#   docker compose exec wordpress wp redis status --allow-root
 ```
 
 ---
+# Conclusion
+
+13% TTFB improvement on a localhost demo looks small. In production, your DB is on a separate server — each query eliminated by Redis saves a real network round trip. At scale, Redis is the difference between a site that handles 150 req/s and one that handles 800 req/s, because MySQL stops being the bottleneck. The p99 drop is the number that matters — your slowest users got 10% faster even here."
+
+The p99 -10% and TTFB -13% are actually solid for a single-machine, no-concurrency benchmark. Present them as a lower bound, not the ceiling.
 ---
 ---
 
