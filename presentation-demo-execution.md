@@ -5,6 +5,46 @@
 
 ---
 
+## Definitions
+
+### Attack Vectors
+
+| Abbreviation | Full Name | One-liner |
+|---|---|---|
+| — | **Enumeration** | Mapping the target without auth — usernames, versions, exposed endpoints |
+| **SQLi** | SQL Injection | Injecting SQL into queries to extract/modify data the attacker shouldn't access |
+| **XSS** | Cross-Site Scripting | Injecting scripts that execute in the victim's browser |
+| — | XSS (Reflected) | Payload in the URL — executes when the victim clicks the link |
+| — | XSS (Stored) | Payload saved to DB — executes for every visitor |
+| **CSRF** | Cross-Site Request Forgery | Victim's authenticated browser is tricked into sending a forged request |
+| **IDOR** | Insecure Direct Object Reference | Changing an ID parameter to access another user's data without authorization |
+| **RCE** | Remote Code Execution | Attacker runs arbitrary code on the server |
+| — | File Upload RCE | Uploading a script file (.php) that the server then executes |
+| — | eval() RCE | User input passed directly to `eval()` → arbitrary code execution |
+| **SCA** | Supply Chain Attack | Malicious code embedded in third-party plugins/themes before install |
+| **OWASP** | Open Worldwide Application Security Project | Publishes the Top 10 most critical web security risks |
+| **CVE** | Common Vulnerabilities and Exposures | Standardized identifier for a publicly known vulnerability |
+| **CVSS** | Common Vulnerability Scoring System | 0–10 severity score for CVEs (9.8 = critical) |
+| **C2** | Command & Control | Attacker-controlled server that receives stolen data / issues commands |
+
+### WordPress & PHP Concepts
+
+| Term | One-liner |
+|---|---|
+| `wp_ajax_nopriv_` | WordPress AJAX hook callable by **unauthenticated** users — dangerous if used carelessly |
+| `$wpdb->prepare()` | Parameterized query — escapes input before it reaches SQL, prevents SQLi |
+| `esc_html()` | Encodes HTML special chars before output — prevents XSS |
+| `wp_verify_nonce()` | Validates a one-time token tied to user + action — prevents CSRF |
+| `current_user_can()` | Checks capability/permission before allowing an action — prevents IDOR |
+| `disable_functions` | PHP INI directive that blacklists dangerous functions (`system`, `exec`, `passthru`…) |
+| `open_basedir` | PHP INI restriction — prevents file access outside the allowed directory tree |
+| Autoload options | WordPress options loaded into RAM on **every** request, regardless of whether they're needed |
+| Object cache | Redis stores DB query results in RAM — eliminates repeat SQL queries per request |
+| Drop-in | A file placed in `wp-content/` that WordPress loads unconditionally (e.g. `object-cache.php`) |
+| Nonce | "Number used once" — a short-lived signed token that ties a form submission to a specific user and action |
+
+---
+
 ## Section 1: Enumeration & Fingerprinting
 
 **OWASP A07 — Security Misconfiguration / Identification and Authentication Failures**
