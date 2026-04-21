@@ -304,8 +304,8 @@ curl -s 'http://localhost:9090/loot' | python3 -m json.tool
 ```
 
 - **Attack surface**: Flask C2 server at `:9090` collects exfiltrated data
-- **Expected result**: JSON array with stolen cookie values
-- **Evidence**: Empty until admin visits `http://localhost:8080/wp-admin/admin.php?page=vuln-demo` in browser. During live demo: will contain `wordpress_logged_in_*` session cookies
+- **Expected result**: JSON array with stolen cookie values — `sbjs_*` analytics cookies and `wp-settings-time-1`
+- **Evidence**: Empty until admin visits `http://localhost:8080/wp-admin/admin.php?page=vuln-demo` in browser. The `wordpress_logged_in_*` auth cookie will NOT appear — WordPress sets it with `HttpOnly`, so `document.cookie` cannot read it. **This is the talking point**: "XSS fired and captured cookies — but the session auth cookie is HttpOnly so it's out of reach. Apps that skip HttpOnly on custom session tokens hand attackers the keys directly. That's what `session.cookie_httponly = 1` in php-hardened.ini prevents."
 
 ---
 
@@ -1010,7 +1010,7 @@ docker compose exec wordpress wp eval 'global $wpdb; $wpdb->query("TRUNCATE TABL
 docker compose exec wordpress rm -f /tmp/shell.php /var/www/html/wp-content/uploads/vuln-demo/shell.php
 
 # Clear attacker loot (Section 3 — C2 cookie store)
-curl -s -X DELETE 'http://localhost:9090/loot'
+docker compose exec attacker bash -c 'echo "[]" > /app/loot.json'
 
 # Restore tampered core file (Section 15 — integrity check)
 docker compose exec wordpress wp core download --force --allow-root
