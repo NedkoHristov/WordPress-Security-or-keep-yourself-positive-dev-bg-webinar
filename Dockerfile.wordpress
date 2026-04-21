@@ -1,0 +1,26 @@
+FROM wordpress:6.9-php8.3-apache
+
+# Install MySQL client (required for wp db query / wp db export)
+# Install apache2-utils for ab (Apache Bench) used by wp-perf-test.sh
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    default-mysql-client \
+    apache2-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install WP-CLI
+RUN curl -o /usr/local/bin/wp https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar \
+    && chmod +x /usr/local/bin/wp
+
+# Install Redis PHP extension
+RUN pecl install redis && docker-php-ext-enable redis
+
+# Copy custom php.ini for demo (insecure on purpose for demo)
+COPY config/php-demo.ini /usr/local/etc/php/conf.d/zz-demo.ini
+
+# Copy demo scripts
+COPY scripts/wp-setup.sh     /usr/local/bin/wp-setup.sh
+COPY scripts/wp-bloat.sh     /usr/local/bin/wp-bloat.sh
+COPY scripts/wp-cleanup.sh   /usr/local/bin/wp-cleanup.sh
+COPY scripts/wp-perf-test.sh /usr/local/bin/wp-perf-test.sh
+RUN chmod +x /usr/local/bin/wp-setup.sh /usr/local/bin/wp-bloat.sh \
+              /usr/local/bin/wp-cleanup.sh /usr/local/bin/wp-perf-test.sh

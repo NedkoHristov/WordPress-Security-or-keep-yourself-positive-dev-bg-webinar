@@ -1,0 +1,5 @@
+.env
+*.log
+loot.json
+/tmp/
+shell.php

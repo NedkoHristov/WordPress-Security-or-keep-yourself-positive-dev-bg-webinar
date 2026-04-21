@@ -1,0 +1,24 @@
+/*
+Theme Name: Premium Theme (Nulled)
+Theme URI: https://totally-legit-themes.example.com
+Description: A beautiful premium theme - NULLED version. WARNING: This is a demo showing backdoors in pirated themes.
+Author: Totally Legit Author
+Version: 3.2.1
+License: GPL v2
+*/
+
+body {
+    font-family: Arial, sans-serif;
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+.backdoor-warning {
+    background: #ff0000;
+    color: white;
+    padding: 20px;
+    text-align: center;
+    font-weight: bold;
+    margin: 10px 0;
+}

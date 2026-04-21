@@ -1,0 +1,77 @@
+services:
+  db:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: wordpress
+      MYSQL_USER: wpuser
+      MYSQL_PASSWORD: wppassword
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+
+  wordpress:
+    build:
+      context: .
+      dockerfile: Dockerfile.wordpress
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    ports:
+      - "8080:80"
+    environment:
+      WORDPRESS_DB_HOST: db:3306
+      WORDPRESS_DB_USER: wpuser
+      WORDPRESS_DB_PASSWORD: wppassword
+      WORDPRESS_DB_NAME: wordpress
+      WORDPRESS_DEBUG: 1
+      WORDPRESS_CONFIG_EXTRA: |
+        define('WP_REDIS_HOST', 'redis');
+        define('WP_REDIS_PORT', 6379);
+        define('WP_DEBUG_LOG', true);
+        define('SAVEQUERIES', true);
+    volumes:
+      - wp_data:/var/www/html
+      - ./plugins/wp-vuln-demo:/var/www/html/wp-content/plugins/wp-vuln-demo
+      - ./plugins/wp-security-hardened:/var/www/html/wp-content/plugins/wp-security-hardened
+      - ./themes/nulled-theme-demo:/var/www/html/wp-content/themes/nulled-theme-demo
+
+  wpscan:
+    image: wpscanteam/wpscan:latest
+    depends_on:
+      - wordpress
+    environment:
+      # Free API token from https://wpscan.com/register — enables CVE lookups against the WPScan vulnerability DB.
+      # Without a token the scanner still works but skips vulnerability matching.
+      WPSCAN_API_TOKEN: "YOUR_WPSCAN_API_TOKEN_HERE"
+    volumes:
+      - ./demos/passwords.txt:/tmp/passwords.txt:ro
+    profiles:
+      - tools
+
+  attacker:
+    build:
+      context: .
+      dockerfile: Dockerfile.attacker
+    depends_on:
+      - wordpress
+    ports:
+      - "9090:8888"
+    profiles:
+      - tools
+
+volumes:
+  db_data:
+  wp_data:

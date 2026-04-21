@@ -1,0 +1,9 @@
+FROM python:3.12-slim
+
+RUN pip install --no-cache-dir flask requests
+
+COPY scripts/attacker_server.py /app/attacker_server.py
+
+WORKDIR /app
+
+CMD ["python", "attacker_server.py"]
